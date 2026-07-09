@@ -4,6 +4,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
 from parser.build_dataset import build_dataset
 
@@ -131,7 +132,7 @@ def _tenor_avg_months(legs, unit):
     return (sum(legs) / len(legs)) * factor
 
 
-def render_tenor_bid_offer_pyramid(data: pd.DataFrame, top_n: int = 15):
+def render_tenor_bid_offer_pyramid(data: pd.DataFrame, top_n: int = 12):
     bo = data[data["side_action"].isin(["BID", "OFFER"]) & data["tenor_raw"].notna()]
     if bo.empty:
         st.info("선택된 데이터에 만기별 Bid/Offer 정보가 없어요.")
@@ -154,36 +155,45 @@ def render_tenor_bid_offer_pyramid(data: pd.DataFrame, top_n: int = 15):
     cats = counts.index.tolist()
     offer_vals = counts["OFFER"].tolist()
     bid_vals = counts["BID"].tolist()
-
-    # 가운데 라벨이 막대 끝 숫자와 겹치지 않도록, 0을 중심으로 라벨 전용 여백(gap)을 비워두고
-    # 그 바깥쪽에서부터 막대가 시작되게 한다.
     max_val = max(offer_vals + bid_vals) if (offer_vals + bid_vals) else 1
-    gap = max(max_val * 0.18, 1.5)
 
-    fig = go.Figure()
+    # 진짜 서브플롯 3개(Offer | 라벨 | Bid)로 나눠서, 가운데 라벨 칸은 막대 값 크기와
+    # 무관하게 항상 고정된 빈 공간으로 유지한다 (예시 이미지처럼).
+    fig = make_subplots(
+        rows=1, cols=3, shared_yaxes=True,
+        column_widths=[0.4, 0.2, 0.4], horizontal_spacing=0.01,
+    )
+
     fig.add_trace(go.Bar(
-        y=cats, x=[-v for v in offer_vals], base=-gap, orientation="h", name="Offer",
+        y=cats, x=offer_vals, orientation="h", name="Offer",
         marker_color=OFFER_COLOR, text=offer_vals, textposition="outside",
         hovertemplate="%{y} Offer: %{text}<extra></extra>",
-    ))
-    fig.add_trace(go.Bar(
-        y=cats, x=bid_vals, base=gap, orientation="h", name="Bid",
-        marker_color=BID_COLOR, text=bid_vals, textposition="outside",
-        hovertemplate="%{y} Bid: %{text}<extra></extra>",
-    ))
+    ), row=1, col=1)
+
     fig.add_trace(go.Scatter(
         y=cats, x=[0] * len(cats), mode="text", text=cats, textposition="middle center",
-        textfont=dict(size=13, color="#333"), showlegend=False, hoverinfo="skip",
-    ))
-    outer = gap + max_val
+        textfont=dict(size=14, color="#333"), showlegend=False, hoverinfo="skip",
+    ), row=1, col=2)
+
+    fig.add_trace(go.Bar(
+        y=cats, x=bid_vals, orientation="h", name="Bid",
+        marker_color=BID_COLOR, text=bid_vals, textposition="outside",
+        hovertemplate="%{y} Bid: %{text}<extra></extra>",
+    ), row=1, col=3)
+
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False,
+                      range=[max_val * 1.25, 0], row=1, col=1)
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False,
+                      range=[-1, 1], fixedrange=True, row=1, col=2)
+    fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False,
+                      range=[0, max_val * 1.25], row=1, col=3)
+    fig.update_yaxes(showticklabels=False, autorange="reversed")
     fig.update_layout(
-        barmode="overlay",
-        bargap=0.3,
-        height=max(320, 40 * len(cats)),
-        xaxis=dict(showticklabels=False, zeroline=False, range=[-outer * 1.2, outer * 1.2]),
-        yaxis=dict(showticklabels=False, autorange="reversed"),
+        height=max(320, 45 * len(cats)),
+        showlegend=True,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=10, r=10, t=30, b=10),
+        bargap=0.3,
     )
     st.plotly_chart(fig, use_container_width=True)
 
