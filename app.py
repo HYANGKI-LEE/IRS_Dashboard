@@ -47,11 +47,12 @@ st.sidebar.header("필터")
 
 valid_dates = sorted(d for d in df["date"].dropna().unique())
 if valid_dates:
+    latest_date = pd.to_datetime(valid_dates[-1]).date()
     date_range = st.sidebar.date_input(
         "날짜 범위",
-        value=(pd.to_datetime(valid_dates[0]).date(), pd.to_datetime(valid_dates[-1]).date()),
+        value=(latest_date, latest_date),  # 기본값 = 가장 최신 날짜 하루만
         min_value=pd.to_datetime(valid_dates[0]).date(),
-        max_value=pd.to_datetime(valid_dates[-1]).date(),
+        max_value=latest_date,
     )
 else:
     date_range = None
@@ -124,6 +125,9 @@ UNIT_TO_MONTHS = {"년": 12, "y": 12, "Y": 12, "개월": 1, "m": 1, "M": 1, "주
 OFFER_COLOR = "#4C9F9F"
 BID_COLOR = "#F5A65B"
 
+# Outright(단일 만기)의 기본 축 — 항상 이 순서로 표시하고, 데이터에 없으면 0으로 비워둔다.
+BASE_OUTRIGHT_ORDER = ["6M", "9M", "1Y", "1.5Y", "2Y", "3Y", "4Y", "5Y", "7Y", "9Y", "10Y"]
+
 
 def _tenor_avg_months(legs, unit):
     if not legs:
@@ -132,29 +136,35 @@ def _tenor_avg_months(legs, unit):
     return (sum(legs) / len(legs)) * factor
 
 
-def render_tenor_bid_offer_pyramid(data: pd.DataFrame, top_n: int = 12):
-    bo = data[data["side_action"].isin(["BID", "OFFER"]) & data["tenor_raw"].notna()]
-    if bo.empty:
-        st.info("선택된 데이터에 만기별 Bid/Offer 정보가 없어요.")
+def _fmt_num(x: float) -> str:
+    return str(int(x)) if float(x).is_integer() else f"{x:g}"
+
+
+def _outright_label(legs, unit):
+    """단일 만기를 표준 표기(6M/1.5Y 등)로 정규화. 스펠링이 달라도(9개월/9m) 같은 라벨로 합쳐진다.
+    주(week) 단위는 개월로 어설프게 환산하면 지저분해지므로 별도로 W 표기를 쓴다."""
+    if not legs or len(legs) != 1:
+        return None
+    if unit == "주":
+        return f"{_fmt_num(legs[0])}W"
+    months = _tenor_avg_months(legs, unit)
+    if months is None:
+        return None
+    return f"{_fmt_num(months)}M" if months < 12 else f"{_fmt_num(months / 12)}Y"
+
+
+def _outright_label_months(label: str) -> float:
+    num, unit = float(label[:-1]), label[-1]
+    if unit == "W":
+        return num * (12 / 52)
+    return num if unit == "M" else num * 12
+
+
+def render_diverging_bar(cats, offer_vals, bid_vals, empty_msg: str):
+    if not cats:
+        st.info(empty_msg)
         return
 
-    counts = bo.groupby(["tenor_raw", "side_action"]).size().unstack(fill_value=0)
-    for col in ("BID", "OFFER"):
-        if col not in counts:
-            counts[col] = 0
-    counts["total"] = counts["BID"] + counts["OFFER"]
-    counts = counts.sort_values("total", ascending=False).head(top_n)
-
-    meta = bo.drop_duplicates("tenor_raw").set_index("tenor_raw")[["tenor_legs", "tenor_unit"]]
-    counts["sort_key"] = [
-        _tenor_avg_months(meta.loc[t, "tenor_legs"], meta.loc[t, "tenor_unit"]) or 9999
-        for t in counts.index
-    ]
-    counts = counts.sort_values("sort_key", ascending=True)
-
-    cats = counts.index.tolist()
-    offer_vals = counts["OFFER"].tolist()
-    bid_vals = counts["BID"].tolist()
     max_val = max(offer_vals + bid_vals) if (offer_vals + bid_vals) else 1
 
     # 진짜 서브플롯 3개(Offer | 라벨 | Bid)로 나눠서, 가운데 라벨 칸은 막대 값 크기와
@@ -198,9 +208,62 @@ def render_tenor_bid_offer_pyramid(data: pd.DataFrame, top_n: int = 12):
     st.plotly_chart(fig, use_container_width=True)
 
 
+def render_outright_chart(data: pd.DataFrame):
+    single = data[
+        data["side_action"].isin(["BID", "OFFER"])
+        & data["tenor_legs"].apply(lambda l: isinstance(l, list) and len(l) == 1)
+    ].copy()
+    single["outright_label"] = single.apply(
+        lambda r: _outright_label(r["tenor_legs"], r["tenor_unit"]), axis=1
+    )
+    single = single[single["outright_label"].notna()]
+
+    counts = single.groupby(["outright_label", "side_action"]).size().unstack(fill_value=0)
+    for col in ("BID", "OFFER"):
+        if col not in counts:
+            counts[col] = 0
+
+    extras = sorted((l for l in counts.index if l not in BASE_OUTRIGHT_ORDER), key=_outright_label_months)
+    order = BASE_OUTRIGHT_ORDER + extras  # 기본 11개는 항상 표시, 그 외는 발견될 때만 뒤에 추가
+    counts = counts.reindex(order, fill_value=0)
+
+    render_diverging_bar(order, counts["OFFER"].tolist(), counts["BID"].tolist(), "")
+
+
+def render_spread_chart(data: pd.DataFrame, top_n: int = 12):
+    spread = data[
+        data["side_action"].isin(["BID", "OFFER"])
+        & data["tenor_legs"].apply(lambda l: isinstance(l, list) and len(l) >= 2)
+    ]
+    if spread.empty:
+        st.info("선택된 데이터에 스프레드 거래(2개 이상 만기 조합) 정보가 없어요.")
+        return
+
+    counts = spread.groupby(["tenor_raw", "side_action"]).size().unstack(fill_value=0)
+    for col in ("BID", "OFFER"):
+        if col not in counts:
+            counts[col] = 0
+    counts["total"] = counts["BID"] + counts["OFFER"]
+    counts = counts.sort_values("total", ascending=False).head(top_n)
+
+    meta = spread.drop_duplicates("tenor_raw").set_index("tenor_raw")[["tenor_legs", "tenor_unit"]]
+    counts["sort_key"] = [
+        _tenor_avg_months(meta.loc[t, "tenor_legs"], meta.loc[t, "tenor_unit"]) or 9999
+        for t in counts.index
+    ]
+    counts = counts.sort_values("sort_key", ascending=True)
+
+    render_diverging_bar(counts.index.tolist(), counts["OFFER"].tolist(), counts["BID"].tolist(), "")
+
+
 with tab_charts:
-    st.subheader("만기별 Bid/Offer 비교 (왼쪽 Offer / 오른쪽 Bid)")
-    render_tenor_bid_offer_pyramid(fdf)
+    st.subheader("Outright 만기별 Bid/Offer 비교 (왼쪽 Offer / 오른쪽 Bid)")
+    st.caption("6M/9M/1Y/1.5Y/2Y/3Y/4Y/5Y/7Y/9Y/10Y가 기본 만기이며, 그 외 만기는 호가가 생기면 뒤에 임시로 추가돼요.")
+    render_outright_chart(fdf)
+
+    st.subheader("스프레드 거래 만기별 Bid/Offer 비교")
+    st.caption("2개 이상 만기를 조합한 거래(예: `2*3년`, `1*3년` 등) — 상위 12개")
+    render_spread_chart(fdf)
 
     c1, c2 = st.columns(2)
 
