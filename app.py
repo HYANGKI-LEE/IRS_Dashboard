@@ -127,6 +127,9 @@ UNIT_TO_MONTHS = {
 WEEK_UNITS = ("주", "w", "W")
 OFFER_COLOR = "#4C9F9F"
 BID_COLOR = "#F5A65B"
+TRADE_COLOR = "#9E9E9E"
+QUOTE_ACTIONS = ["BID", "OFFER"]
+DEAL_ACTION_LIST = ["GIVEN", "TAKEN", "TRADE"]  # 기븐 = Bid 쪽 체결, 테이큰 = Offer 쪽 체결, 거래 = 방향 불명
 
 # Outright(단일 만기)의 기본 축 — 항상 이 순서로 표시하고, 데이터에 없으면 0으로 비워둔다.
 BASE_OUTRIGHT_ORDER = ["6M", "9M", "1Y", "1.5Y", "2Y", "3Y", "4Y", "5Y", "7Y", "9Y", "10Y"]
@@ -201,28 +204,6 @@ def render_diverging_bar(cats, offer_vals, bid_vals, empty_msg: str):
     st.plotly_chart(fig, use_container_width=True)
 
 
-def render_outright_chart(data: pd.DataFrame):
-    single = data[
-        data["side_action"].isin(["BID", "OFFER"])
-        & data["tenor_legs"].apply(lambda l: isinstance(l, list) and len(l) == 1)
-    ].copy()
-    single["outright_label"] = single.apply(
-        lambda r: _outright_label(r["tenor_legs"], r["tenor_unit"]), axis=1
-    )
-    single = single[single["outright_label"].notna()]
-
-    counts = single.groupby(["outright_label", "side_action"]).size().unstack(fill_value=0)
-    for col in ("BID", "OFFER"):
-        if col not in counts:
-            counts[col] = 0
-
-    extras = sorted((l for l in counts.index if l not in BASE_OUTRIGHT_ORDER), key=_outright_label_months)
-    order = BASE_OUTRIGHT_ORDER + extras  # 기본 11개는 항상 표시, 그 외는 발견될 때만 뒤에 추가
-    counts = counts.reindex(order, fill_value=0)
-
-    render_diverging_bar(order, counts["OFFER"].tolist(), counts["BID"].tolist(), "")
-
-
 def _spread_label(legs, unit):
     """'*'와 '/' 구분자를 같은 만기로 합친다 (예: 5*10년, 5/10년 -> 둘 다 '5*10년')."""
     if not legs or len(legs) < 2:
@@ -231,41 +212,139 @@ def _spread_label(legs, unit):
     return f"{joined}{unit}" if unit else joined
 
 
-def render_spread_chart(data: pd.DataFrame):
-    spread = data[
-        data["side_action"].isin(["BID", "OFFER"])
-        & data["tenor_legs"].apply(lambda l: isinstance(l, list) and len(l) >= 2)
+def _is_single_leg(l):
+    return isinstance(l, list) and len(l) == 1
+
+
+def _is_multi_leg(l):
+    return isinstance(l, list) and len(l) >= 2
+
+
+def _label_counts(data: pd.DataFrame, actions: list, label_fn, leg_filter) -> pd.DataFrame:
+    """actions(side_action 목록)별 만기 라벨 카운트 테이블. 데이터가 없어도 actions 컬럼은 항상 존재."""
+    sub = data[data["side_action"].isin(actions) & data["tenor_legs"].apply(leg_filter)].copy()
+    counts = pd.DataFrame(columns=actions)
+    if not sub.empty:
+        sub["label"] = sub.apply(lambda r: label_fn(r["tenor_legs"], r["tenor_unit"]), axis=1)
+        sub = sub[sub["label"].notna()]
+        if not sub.empty:
+            counts = sub.groupby(["label", "side_action"]).size().unstack(fill_value=0)
+    for a in actions:
+        if a not in counts:
+            counts[a] = 0
+    return counts
+
+
+def outright_order(data: pd.DataFrame) -> list:
+    """호가/거래 둘 다 포함해서 등장하는 outright 만기 라벨 순서 — 두 차트가 같은 행으로 정렬되게 함."""
+    counts = _label_counts(data, QUOTE_ACTIONS + DEAL_ACTION_LIST, _outright_label, _is_single_leg)
+    extras = sorted((l for l in counts.index if l not in BASE_OUTRIGHT_ORDER), key=_outright_label_months)
+    return BASE_OUTRIGHT_ORDER + extras  # 기본 11개는 항상 표시, 그 외는 발견될 때만 뒤에 추가
+
+
+def spread_order(data: pd.DataFrame) -> list:
+    """호가/거래 둘 다 포함해서 등장하는 스프레드 만기 라벨을, 첫 번째 만기(A) 오름차순으로."""
+    sub = data[
+        data["side_action"].isin(QUOTE_ACTIONS + DEAL_ACTION_LIST)
+        & data["tenor_legs"].apply(_is_multi_leg)
     ].copy()
-    if spread.empty:
+    if sub.empty:
+        return []
+    sub["label"] = sub.apply(lambda r: _spread_label(r["tenor_legs"], r["tenor_unit"]), axis=1)
+    sub = sub[sub["label"].notna()]
+    meta = sub.drop_duplicates("label").set_index("label")["tenor_legs"]
+    return sorted(meta.index, key=lambda l: tuple(meta.loc[l]))
+
+
+def render_outright_chart(data: pd.DataFrame, order: list):
+    counts = _label_counts(data, QUOTE_ACTIONS, _outright_label, _is_single_leg).reindex(order, fill_value=0)
+    render_diverging_bar(order, counts["OFFER"].tolist(), counts["BID"].tolist(), "")
+
+
+def render_spread_chart(data: pd.DataFrame, order: list):
+    if not order:
         st.info("선택된 데이터에 스프레드 거래(2개 이상 만기 조합) 정보가 없어요.")
         return
+    counts = _label_counts(data, QUOTE_ACTIONS, _spread_label, _is_multi_leg).reindex(order, fill_value=0)
+    render_diverging_bar(order, counts["OFFER"].tolist(), counts["BID"].tolist(), "")
 
-    spread["spread_label"] = spread.apply(
-        lambda r: _spread_label(r["tenor_legs"], r["tenor_unit"]), axis=1
+
+def render_deal_stacked_chart(cats: list, given_vals: list, taken_vals: list, trade_vals: list, empty_msg: str):
+    if not cats or sum(given_vals) + sum(taken_vals) + sum(trade_vals) == 0:
+        st.info(empty_msg)
+        return
+
+    totals = [g + t + r for g, t, r in zip(given_vals, taken_vals, trade_vals)]
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=cats, x=given_vals, orientation="h", name="기븐",
+        marker_color=BID_COLOR, hovertemplate="%{y} 기븐: %{x}<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        y=cats, x=taken_vals, orientation="h", name="테이큰",
+        marker_color=OFFER_COLOR, hovertemplate="%{y} 테이큰: %{x}<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        y=cats, x=trade_vals, orientation="h", name="거래",
+        marker_color=TRADE_COLOR, hovertemplate="%{y} 거래: %{x}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        y=cats, x=totals, mode="text",
+        text=[str(t) if t > 0 else "" for t in totals],
+        textposition="middle right", showlegend=False, hoverinfo="skip",
+    ))
+    fig.update_layout(
+        barmode="stack",
+        height=max(320, 40 * len(cats)),
+        xaxis=dict(showticklabels=False, zeroline=False, range=[0, max(totals or [1]) * 1.2]),
+        yaxis=dict(autorange="reversed"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=10, r=10, t=30, b=10),
     )
-    spread = spread[spread["spread_label"].notna()]
+    st.plotly_chart(fig, use_container_width=True)
 
-    counts = spread.groupby(["spread_label", "side_action"]).size().unstack(fill_value=0)
-    for col in ("BID", "OFFER"):
-        if col not in counts:
-            counts[col] = 0
 
-    # 첫 번째 만기(A) 기준 오름차순, 동률이면 두 번째 만기(B) 기준
-    meta = spread.drop_duplicates("spread_label").set_index("spread_label")["tenor_legs"]
-    counts["sort_key"] = [tuple(meta.loc[l]) for l in counts.index]
-    counts = counts.sort_values("sort_key", ascending=True)
+def render_outright_deal_chart(data: pd.DataFrame, order: list):
+    counts = _label_counts(data, DEAL_ACTION_LIST, _outright_label, _is_single_leg).reindex(order, fill_value=0)
+    render_deal_stacked_chart(
+        order, counts["GIVEN"].tolist(), counts["TAKEN"].tolist(), counts["TRADE"].tolist(),
+        "선택된 데이터에 실제 거래 내역이 없어요.",
+    )
 
-    render_diverging_bar(counts.index.tolist(), counts["OFFER"].tolist(), counts["BID"].tolist(), "")
+
+def render_spread_deal_chart(data: pd.DataFrame, order: list):
+    if not order:
+        st.info("선택된 데이터에 스프레드 거래 내역이 없어요.")
+        return
+    counts = _label_counts(data, DEAL_ACTION_LIST, _spread_label, _is_multi_leg).reindex(order, fill_value=0)
+    render_deal_stacked_chart(
+        order, counts["GIVEN"].tolist(), counts["TAKEN"].tolist(), counts["TRADE"].tolist(),
+        "선택된 데이터에 스프레드 실제 거래 내역이 없어요.",
+    )
 
 
 with tab_charts:
-    st.subheader("Outright 만기별 Bid/Offer 비교")
-    st.caption("6M/9M/1Y/1.5Y/2Y/3Y/4Y/5Y/7Y/9Y/10Y가 기본 만기이며, 그 외 만기는 호가가 생기면 뒤에 임시로 추가돼요.")
-    render_outright_chart(fdf)
+    st.subheader("Outright 만기별")
+    st.caption("6M/9M/1Y/1.5Y/2Y/3Y/4Y/5Y/7Y/9Y/10Y가 기본 만기이며, 그 외 만기는 호가/거래가 생기면 뒤에 임시로 추가돼요.")
+    outright_ord = outright_order(fdf)
+    oc1, oc2 = st.columns(2)
+    with oc1:
+        st.markdown("**호가 (Bid/Offer)**")
+        render_outright_chart(fdf, outright_ord)
+    with oc2:
+        st.markdown("**실제 거래 (기븐/테이큰/거래)**")
+        render_outright_deal_chart(fdf, outright_ord)
 
-    st.subheader("스프레드 거래 만기별 Bid/Offer 비교")
+    st.subheader("스프레드 거래 만기별")
     st.caption("2개 이상 만기를 조합한 거래(예: `2*3년`, `1*3년` 등) — 첫 번째 만기 기준 오름차순, `*`/`/` 구분자는 같은 만기로 통합")
-    render_spread_chart(fdf)
+    spread_ord = spread_order(fdf)
+    sc1, sc2 = st.columns(2)
+    with sc1:
+        st.markdown("**호가 (Bid/Offer)**")
+        render_spread_chart(fdf, spread_ord)
+    with sc2:
+        st.markdown("**실제 거래 (기븐/테이큰/거래)**")
+        render_spread_deal_chart(fdf, spread_ord)
 
     c1, c2 = st.columns(2)
 
