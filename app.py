@@ -174,7 +174,7 @@ def render_diverging_bar(cats, offer_vals, bid_vals, empty_msg: str):
     # 가운데 라벨이 막대 끝 숫자와 겹치지 않도록, 0을 중심으로 라벨 전용 여백(gap)을 비워두고
     # 그 바깥쪽에서부터 막대가 시작되게 한다. gap은 막대 값 크기에 비례.
     max_val = max(offer_vals + bid_vals) if (offer_vals + bid_vals) else 1
-    gap = max(max_val * 0.18, 1.5)
+    gap = max(max_val * 0.126, 1.05)  # 기존 대비 70%
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
@@ -279,7 +279,7 @@ def render_deal_stacked_chart(cats: list, given_vals: list, taken_vals: list, tr
 
     totals = [g + t + r for g, t, r in zip(given_vals, taken_vals, trade_vals)]
     max_total = max(totals) if totals else 0
-    gap = max(max_total * 0.06, 0.4)  # 합계 숫자를 막대 끝에서 살짝 띄우는 여백
+    gap = max(max_total * 0.03, 0.2)  # 합계 숫자를 막대 끝에서 살짝 띄우는 여백 (기존 대비 절반)
 
     fig = go.Figure()
     fig.add_trace(go.Bar(
