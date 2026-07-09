@@ -212,7 +212,10 @@ def _spread_label(legs, unit):
     if not legs or len(legs) < 2:
         return None
     joined = "*".join(_fmt_num(x) for x in legs)
-    return f"{joined}{unit}" if isinstance(unit, str) and unit else joined
+    if isinstance(unit, str) and unit:
+        display_unit = "월" if unit == "개월" else unit
+        return f"{joined}{display_unit}"
+    return joined
 
 
 def _is_single_leg(l):
