@@ -148,6 +148,23 @@ def _fmt_num(x: float) -> str:
     return str(int(x)) if float(x).is_integer() else f"{x:g}"
 
 
+def _unwrap_handle_series(values: list) -> list:
+    """IRS 호가 관행상 '핸들'(정수부)을 생략하고 끝 두 자리만 부르는 경우가 많다
+    (예: 4.99 -> "99", 5.02 -> "02"). 그대로 숫자로 보면 02(2.0)가 99보다 작아 보이지만
+    실제로는 핸들이 4->5로 넘어간 것이므로 02가 더 높은 호가다.
+    시간순으로 인접한 값끼리 차이가 50을 넘으면 핸들이 넘어간 것으로 보고 100 단위로
+    보정해서, 연속적인(실제 크기 순서가 맞는) 시계열로 만든다. 첫 값은 원문 그대로 기준점으로 쓴다."""
+    if not values:
+        return values
+    unwrapped = [values[0]]
+    for v in values[1:]:
+        prev = unwrapped[-1]
+        diff = v - prev
+        diff = ((diff + 50) % 100) - 50  # diff를 (-50, 50] 범위로 보정
+        unwrapped.append(prev + diff)
+    return unwrapped
+
+
 def _outright_label(legs, unit):
     """단일 만기를 표준 표기(6M/1.5Y 등)로 정규화. 스펠링이 달라도(9개월/9m) 같은 라벨로 합쳐진다.
     주(week) 단위는 개월로 어설프게 환산하면 지저분해지므로 별도로 W 표기를 쓴다."""
@@ -408,13 +425,20 @@ with tab_price:
             & single["datetime"].notna()
         ]
         if len(rdf):
+            rdf = rdf.sort_values("datetime").copy()
+            rdf["price"] = _unwrap_handle_series(rdf["rate_1"].tolist())
+            st.caption(
+                "핸들(정수부) 생략 관행 보정 적용: 4.99->\"99\", 5.02->\"02\"처럼 인접 호가 대비 "
+                "50 이상 튀면 핸들이 넘어간 것으로 보고 100 단위로 이어 붙였어요. "
+                "원래 입력값은 raw_text/hover에서 확인 가능."
+            )
             st.plotly_chart(
                 px.scatter(
-                    rdf.sort_values("datetime"),
+                    rdf,
                     x="datetime",
-                    y="rate_1",
+                    y="price",
                     color="action_label",
-                    hover_data=["sender", "raw_text"],
+                    hover_data=["sender", "rate_1", "raw_text"],
                 ),
                 use_container_width=True,
             )
