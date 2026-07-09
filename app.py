@@ -118,8 +118,8 @@ k5.metric("리퍼", f"{refer_n:,}")
 k6.metric("미분류 비율", f"{unclassified_pct:.1f}%")
 k7.metric("발신자 수", fdf["sender"].nunique())
 
-tab_charts, tab_trend, tab_table, tab_audit = st.tabs(
-    ["📊 차트", "📈 만기별 가격 추이", "📋 테이블", "🔍 미분류 감사"]
+tab_price, tab_stats, tab_table, tab_audit = st.tabs(
+    ["💰 가격", "📊 통계", "📋 테이블", "🔍 미분류 감사"]
 )
 
 UNIT_TO_MONTHS = {
@@ -376,7 +376,7 @@ def render_outright_and_spread(data: pd.DataFrame):
         render_spread_deal_chart(data, spread_ord)
 
 
-with tab_charts:
+with tab_price:
     st.header("CD")
     render_outright_and_spread(fdf[fdf["rate_type"] == "CD"])
 
@@ -388,6 +388,40 @@ with tab_charts:
 
     st.divider()
 
+    st.subheader("만기별 가격 추이 (Outright)")
+    rate_type_pick = st.selectbox("금리 종류", ["CD", "KOFR"])
+    rt_df = fdf[fdf["rate_type"] == rate_type_pick]
+
+    tenor_options = outright_order(rt_df)
+    if not tenor_options:
+        st.info("선택된 데이터에 Outright 만기 정보가 없어요.")
+    else:
+        picked_tenor = st.selectbox("만기 선택", tenor_options)
+
+        single = rt_df[rt_df["tenor_legs"].apply(_is_single_leg)].copy()
+        single["outright_label"] = single.apply(
+            lambda r: _outright_label(r["tenor_legs"], r["tenor_unit"]), axis=1
+        )
+        rdf = single[
+            (single["outright_label"] == picked_tenor)
+            & single["rate_1"].notna()
+            & single["datetime"].notna()
+        ]
+        if len(rdf):
+            st.plotly_chart(
+                px.scatter(
+                    rdf.sort_values("datetime"),
+                    x="datetime",
+                    y="rate_1",
+                    color="action_label",
+                    hover_data=["sender", "raw_text"],
+                ),
+                use_container_width=True,
+            )
+        else:
+            st.info("이 만기에는 가격이 파싱된 데이터가 없어요.")
+
+with tab_stats:
     c1, c2 = st.columns(2)
 
     with c1:
@@ -434,40 +468,6 @@ with tab_charts:
         )
     else:
         st.info("선택된 데이터에 시간 정보가 없어요.")
-
-with tab_trend:
-    st.subheader("만기별 가격 추이 (Outright)")
-    rate_type_pick = st.selectbox("금리 종류", ["CD", "KOFR"])
-    rt_df = fdf[fdf["rate_type"] == rate_type_pick]
-
-    tenor_options = outright_order(rt_df)
-    if not tenor_options:
-        st.info("선택된 데이터에 Outright 만기 정보가 없어요.")
-    else:
-        picked_tenor = st.selectbox("만기 선택", tenor_options)
-
-        single = rt_df[rt_df["tenor_legs"].apply(_is_single_leg)].copy()
-        single["outright_label"] = single.apply(
-            lambda r: _outright_label(r["tenor_legs"], r["tenor_unit"]), axis=1
-        )
-        rdf = single[
-            (single["outright_label"] == picked_tenor)
-            & single["rate_1"].notna()
-            & single["datetime"].notna()
-        ]
-        if len(rdf):
-            st.plotly_chart(
-                px.scatter(
-                    rdf.sort_values("datetime"),
-                    x="datetime",
-                    y="rate_1",
-                    color="action_label",
-                    hover_data=["sender", "raw_text"],
-                ),
-                use_container_width=True,
-            )
-        else:
-            st.info("이 만기에는 가격이 파싱된 데이터가 없어요.")
 
 with tab_table:
     display_cols = [
