@@ -205,11 +205,14 @@ def render_diverging_bar(cats, offer_vals, bid_vals, empty_msg: str):
 
 
 def _spread_label(legs, unit):
-    """'*'와 '/' 구분자를 같은 만기로 합친다 (예: 5*10년, 5/10년 -> 둘 다 '5*10년')."""
+    """'*'와 '/' 구분자를 같은 만기로 합친다 (예: 5*10년, 5/10년 -> 둘 다 '5*10년').
+    unit이 None인 경우(예: "6*9*12 나비"처럼 단위 표기가 아예 없는 경우) pandas를 거치면
+    NaN(float)으로 바뀌어 `if unit`이 True로 오판되면서 "6*9*12nan" 같은 라벨이 생기던
+    버그가 있어, 문자열인지 명시적으로 확인한다."""
     if not legs or len(legs) < 2:
         return None
     joined = "*".join(_fmt_num(x) for x in legs)
-    return f"{joined}{unit}" if unit else joined
+    return f"{joined}{unit}" if isinstance(unit, str) and unit else joined
 
 
 def _is_single_leg(l):
@@ -236,14 +239,17 @@ def _label_counts(data: pd.DataFrame, actions: list, label_fn, leg_filter) -> pd
 
 
 def outright_order(data: pd.DataFrame) -> list:
-    """호가/거래 둘 다 포함해서 등장하는 outright 만기 라벨 순서 — 두 차트가 같은 행으로 정렬되게 함."""
+    """기본 11개 만기 + 새로 발견된 만기를 모두 합쳐서 실제 기간(개월 환산) 기준으로 정렬.
+    "1W"/"3M"처럼 기본 11개보다 짧은 만기도 맨 뒤가 아니라 제자리(맨 앞)에 오게 된다."""
     counts = _label_counts(data, QUOTE_ACTIONS + DEAL_ACTION_LIST, _outright_label, _is_single_leg)
-    extras = sorted((l for l in counts.index if l not in BASE_OUTRIGHT_ORDER), key=_outright_label_months)
-    return BASE_OUTRIGHT_ORDER + extras  # 기본 11개는 항상 표시, 그 외는 발견될 때만 뒤에 추가
+    all_labels = set(BASE_OUTRIGHT_ORDER) | set(counts.index)
+    return sorted(all_labels, key=_outright_label_months)
 
 
 def spread_order(data: pd.DataFrame) -> list:
-    """호가/거래 둘 다 포함해서 등장하는 스프레드 만기 라벨을, 첫 번째 만기(A) 오름차순으로."""
+    """호가/거래 둘 다 포함해서 등장하는 스프레드 만기 라벨을, 각 다리를 개월로 환산한 뒤
+    첫 번째 다리(A) 기준 오름차순으로 정렬한다. 단위를 무시하고 숫자만 비교하면
+    "9*12개월"(9~12개월)이 "9*10년"(9~10년)과 같은 자리로 섞여버리므로 반드시 환산해야 함."""
     sub = data[
         data["side_action"].isin(QUOTE_ACTIONS + DEAL_ACTION_LIST)
         & data["tenor_legs"].apply(_is_multi_leg)
@@ -252,8 +258,14 @@ def spread_order(data: pd.DataFrame) -> list:
         return []
     sub["label"] = sub.apply(lambda r: _spread_label(r["tenor_legs"], r["tenor_unit"]), axis=1)
     sub = sub[sub["label"].notna()]
-    meta = sub.drop_duplicates("label").set_index("label")["tenor_legs"]
-    return sorted(meta.index, key=lambda l: tuple(meta.loc[l]))
+    meta = sub.drop_duplicates("label").set_index("label")[["tenor_legs", "tenor_unit"]]
+
+    def sort_key(label):
+        legs = meta.loc[label, "tenor_legs"]
+        factor = UNIT_TO_MONTHS.get(meta.loc[label, "tenor_unit"], 1)
+        return tuple(v * factor for v in legs)
+
+    return sorted(meta.index, key=sort_key)
 
 
 def render_outright_chart(data: pd.DataFrame, order: list):
