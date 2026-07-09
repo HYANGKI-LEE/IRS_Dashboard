@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from parser.build_dataset import build_dataset
@@ -118,7 +119,79 @@ k7.metric("발신자 수", fdf["sender"].nunique())
 
 tab_charts, tab_table, tab_audit = st.tabs(["📊 차트", "📋 테이블", "🔍 미분류 감사"])
 
+UNIT_TO_MONTHS = {"년": 12, "y": 12, "Y": 12, "개월": 1, "m": 1, "M": 1, "주": 12 / 52}
+OFFER_COLOR = "#4C9F9F"
+BID_COLOR = "#F5A65B"
+
+
+def _tenor_avg_months(legs, unit):
+    if not legs:
+        return None
+    factor = UNIT_TO_MONTHS.get(unit, 1)
+    return (sum(legs) / len(legs)) * factor
+
+
+def render_tenor_bid_offer_pyramid(data: pd.DataFrame, top_n: int = 15):
+    bo = data[data["side_action"].isin(["BID", "OFFER"]) & data["tenor_raw"].notna()]
+    if bo.empty:
+        st.info("선택된 데이터에 만기별 Bid/Offer 정보가 없어요.")
+        return
+
+    counts = bo.groupby(["tenor_raw", "side_action"]).size().unstack(fill_value=0)
+    for col in ("BID", "OFFER"):
+        if col not in counts:
+            counts[col] = 0
+    counts["total"] = counts["BID"] + counts["OFFER"]
+    counts = counts.sort_values("total", ascending=False).head(top_n)
+
+    meta = bo.drop_duplicates("tenor_raw").set_index("tenor_raw")[["tenor_legs", "tenor_unit"]]
+    counts["sort_key"] = [
+        _tenor_avg_months(meta.loc[t, "tenor_legs"], meta.loc[t, "tenor_unit"]) or 9999
+        for t in counts.index
+    ]
+    counts = counts.sort_values("sort_key", ascending=True)
+
+    cats = counts.index.tolist()
+    offer_vals = counts["OFFER"].tolist()
+    bid_vals = counts["BID"].tolist()
+
+    # 가운데 라벨이 막대 끝 숫자와 겹치지 않도록, 0을 중심으로 라벨 전용 여백(gap)을 비워두고
+    # 그 바깥쪽에서부터 막대가 시작되게 한다.
+    max_val = max(offer_vals + bid_vals) if (offer_vals + bid_vals) else 1
+    gap = max(max_val * 0.18, 1.5)
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        y=cats, x=[-v for v in offer_vals], base=-gap, orientation="h", name="Offer",
+        marker_color=OFFER_COLOR, text=offer_vals, textposition="outside",
+        hovertemplate="%{y} Offer: %{text}<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        y=cats, x=bid_vals, base=gap, orientation="h", name="Bid",
+        marker_color=BID_COLOR, text=bid_vals, textposition="outside",
+        hovertemplate="%{y} Bid: %{text}<extra></extra>",
+    ))
+    fig.add_trace(go.Scatter(
+        y=cats, x=[0] * len(cats), mode="text", text=cats, textposition="middle center",
+        textfont=dict(size=13, color="#333"), showlegend=False, hoverinfo="skip",
+    ))
+    outer = gap + max_val
+    fig.update_layout(
+        barmode="overlay",
+        bargap=0.3,
+        height=max(320, 40 * len(cats)),
+        xaxis=dict(showticklabels=False, zeroline=False, range=[-outer * 1.2, outer * 1.2]),
+        yaxis=dict(showticklabels=False, autorange="reversed"),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        margin=dict(l=10, r=10, t=30, b=10),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
 with tab_charts:
+    st.subheader("만기별 Bid/Offer 비교 (왼쪽 Offer / 오른쪽 Bid)")
+    render_tenor_bid_offer_pyramid(fdf)
+
     c1, c2 = st.columns(2)
 
     with c1:
