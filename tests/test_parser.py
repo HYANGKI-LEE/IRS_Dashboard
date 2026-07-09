@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from parser.build_dataset import build_dataset
+from parser.build_dataset import build_dataset, build_rows
 from parser.classifier import classify
 from parser.extractor import extract
 
@@ -39,8 +39,14 @@ def test_given_and_trade():
 
 
 def test_two_sided_market_is_unclassified():
-    # 방향 단어가 없는 양방향 시세는 Tier1에서는 UNCLASSIFIED가 맞는 동작
+    # 방향 단어가 없는 양방향 시세는 UNCLASSIFIED가 맞는 동작 (방향을 단정할 근거가 없음)
     assert classify("4년 95.5/95.25")[0] == "UNCLASSIFIED"
+
+
+def test_true_unclassified_stays_unclassified_in_build_rows():
+    text = "[2026년 7월 8일 수요일]\n최정욱 (08:48:51) : 안녕하세요 오늘도 좋은 하루 되세요!\n"
+    rows = build_rows(text, "test.txt")
+    assert rows[0]["side_action"] == "UNCLASSIFIED"
 
 
 def test_greeting_is_unclassified_no_crash():
@@ -65,6 +71,15 @@ def test_extract_negative_rate():
 def test_extract_no_rate_on_refer():
     fields = extract("3년 비드 리퍼")
     assert fields["rate_raw"] is None
+
+
+def test_extract_english_week_unit():
+    # "1w"의 영문 w(주) 단위가 만기로 인식되지 않으면 "1"이 가격으로 잘못 잡히는 버그가 있었음
+    fields = extract("1w kofr 59 / 55")
+    assert fields["tenor_legs"] == [1.0]
+    assert fields["tenor_unit"] == "w"
+    assert fields["rate_1"] == 59.0
+    assert fields["rate_2"] == 55.0
 
 
 def test_extract_amount_and_clearing_tags():

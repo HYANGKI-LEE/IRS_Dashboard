@@ -18,7 +18,7 @@ IS_LIVE_RE = re.compile(r"비드온|오퍼온")
 
 # Tier 2: 만기(tenor). 다리(leg) 2~3개(*, / 구분자 모두 허용) 우선, 단일 만기 폴백.
 _NUM = r"\d+(?:\.\d+)?"
-_UNIT = r"(?:년|개월|주|[yYmM])"
+_UNIT = r"(?:년|개월|주|[yYmMwW])"
 TENOR_MULTI_LEG_RE = re.compile(
     rf"({_NUM})\s*([*/])\s*({_NUM})(?:\s*([*/])\s*({_NUM}))?\s*({_UNIT})"
 )

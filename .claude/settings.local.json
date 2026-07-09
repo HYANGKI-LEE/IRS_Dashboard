@@ -15,7 +15,9 @@
       "Bash(python -m pytest tests/ -v)",
       "Bash(pip show *)",
       "Bash(cat .claude/settings.local.json)",
-      "Bash(ls .claude/)"
+      "Bash(ls .claude/)",
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(python -c ' *)"
     ]
   }
 }

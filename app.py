@@ -120,7 +120,11 @@ k7.metric("발신자 수", fdf["sender"].nunique())
 
 tab_charts, tab_table, tab_audit = st.tabs(["📊 차트", "📋 테이블", "🔍 미분류 감사"])
 
-UNIT_TO_MONTHS = {"년": 12, "y": 12, "Y": 12, "개월": 1, "m": 1, "M": 1, "주": 12 / 52}
+UNIT_TO_MONTHS = {
+    "년": 12, "y": 12, "Y": 12, "개월": 1, "m": 1, "M": 1,
+    "주": 12 / 52, "w": 12 / 52, "W": 12 / 52,
+}
+WEEK_UNITS = ("주", "w", "W")
 OFFER_COLOR = "#4C9F9F"
 BID_COLOR = "#F5A65B"
 
@@ -144,7 +148,7 @@ def _outright_label(legs, unit):
     주(week) 단위는 개월로 어설프게 환산하면 지저분해지므로 별도로 W 표기를 쓴다."""
     if not legs or len(legs) != 1:
         return None
-    if unit == "주":
+    if unit in WEEK_UNITS:
         return f"{_fmt_num(legs[0])}W"
     months = _tenor_avg_months(legs, unit)
     if months is None:
