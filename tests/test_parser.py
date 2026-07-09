@@ -173,5 +173,5 @@ def test_market_trades_recap_block_does_not_crash():
     # 에러 없이 전부 UNCLASSIFIED로 떨어지는 게 기대 동작
     df = build_dataset(str(DATA_DIR))
     recap = df[df["raw_text"].str.contains("Market trades", na=False)]
-    assert len(recap) == 1
-    assert recap.iloc[0]["side_action"] == "UNCLASSIFIED"
+    assert len(recap) >= 1  # 데이터가 느는 만큼 시황요약 블록도 계속 늘어날 수 있음
+    assert (recap["side_action"] == "UNCLASSIFIED").all()
