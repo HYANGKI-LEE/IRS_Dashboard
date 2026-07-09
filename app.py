@@ -274,29 +274,41 @@ def render_deal_stacked_chart(cats: list, given_vals: list, taken_vals: list, tr
         st.info(empty_msg)
         return
 
+    def _labels(vals):
+        return [str(v) if v > 0 else "" for v in vals]
+
     totals = [g + t + r for g, t, r in zip(given_vals, taken_vals, trade_vals)]
+    max_total = max(totals) if totals else 0
+    gap = max(max_total * 0.06, 0.4)  # 합계 숫자를 막대 끝에서 살짝 띄우는 여백
+
     fig = go.Figure()
     fig.add_trace(go.Bar(
         y=cats, x=given_vals, orientation="h", name="기븐",
-        marker_color=BID_COLOR, hovertemplate="%{y} 기븐: %{x}<extra></extra>",
+        marker_color=BID_COLOR, text=_labels(given_vals), textposition="inside",
+        insidetextanchor="end", textfont=dict(color="black"),
+        hovertemplate="%{y} 기븐: %{x}<extra></extra>",
     ))
     fig.add_trace(go.Bar(
         y=cats, x=taken_vals, orientation="h", name="테이큰",
-        marker_color=OFFER_COLOR, hovertemplate="%{y} 테이큰: %{x}<extra></extra>",
+        marker_color=OFFER_COLOR, text=_labels(taken_vals), textposition="inside",
+        insidetextanchor="end", textfont=dict(color="black"),
+        hovertemplate="%{y} 테이큰: %{x}<extra></extra>",
     ))
     fig.add_trace(go.Bar(
         y=cats, x=trade_vals, orientation="h", name="거래",
-        marker_color=TRADE_COLOR, hovertemplate="%{y} 거래: %{x}<extra></extra>",
+        marker_color=TRADE_COLOR, text=_labels(trade_vals), textposition="inside",
+        insidetextanchor="end", textfont=dict(color="black"),
+        hovertemplate="%{y} 거래: %{x}<extra></extra>",
     ))
     fig.add_trace(go.Scatter(
-        y=cats, x=totals, mode="text",
+        y=cats, x=[t + gap for t in totals], mode="text",
         text=[str(t) if t > 0 else "" for t in totals],
         textposition="middle right", showlegend=False, hoverinfo="skip",
     ))
     fig.update_layout(
         barmode="stack",
         height=max(320, 40 * len(cats)),
-        xaxis=dict(showticklabels=False, zeroline=False, range=[0, max(totals or [1]) * 1.2]),
+        xaxis=dict(showticklabels=False, zeroline=False, range=[0, (max_total + gap) * 1.2 or 1]),
         yaxis=dict(autorange="reversed"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         margin=dict(l=10, r=10, t=30, b=10),
