@@ -219,39 +219,48 @@ def render_outright_chart(data: pd.DataFrame):
     render_diverging_bar(order, counts["OFFER"].tolist(), counts["BID"].tolist(), "")
 
 
-def render_spread_chart(data: pd.DataFrame, top_n: int = 12):
+def _spread_label(legs, unit):
+    """'*'와 '/' 구분자를 같은 만기로 합친다 (예: 5*10년, 5/10년 -> 둘 다 '5*10년')."""
+    if not legs or len(legs) < 2:
+        return None
+    joined = "*".join(_fmt_num(x) for x in legs)
+    return f"{joined}{unit}" if unit else joined
+
+
+def render_spread_chart(data: pd.DataFrame):
     spread = data[
         data["side_action"].isin(["BID", "OFFER"])
         & data["tenor_legs"].apply(lambda l: isinstance(l, list) and len(l) >= 2)
-    ]
+    ].copy()
     if spread.empty:
         st.info("선택된 데이터에 스프레드 거래(2개 이상 만기 조합) 정보가 없어요.")
         return
 
-    counts = spread.groupby(["tenor_raw", "side_action"]).size().unstack(fill_value=0)
+    spread["spread_label"] = spread.apply(
+        lambda r: _spread_label(r["tenor_legs"], r["tenor_unit"]), axis=1
+    )
+    spread = spread[spread["spread_label"].notna()]
+
+    counts = spread.groupby(["spread_label", "side_action"]).size().unstack(fill_value=0)
     for col in ("BID", "OFFER"):
         if col not in counts:
             counts[col] = 0
-    counts["total"] = counts["BID"] + counts["OFFER"]
-    counts = counts.sort_values("total", ascending=False).head(top_n)
 
-    meta = spread.drop_duplicates("tenor_raw").set_index("tenor_raw")[["tenor_legs", "tenor_unit"]]
-    counts["sort_key"] = [
-        _tenor_avg_months(meta.loc[t, "tenor_legs"], meta.loc[t, "tenor_unit"]) or 9999
-        for t in counts.index
-    ]
+    # 첫 번째 만기(A) 기준 오름차순, 동률이면 두 번째 만기(B) 기준
+    meta = spread.drop_duplicates("spread_label").set_index("spread_label")["tenor_legs"]
+    counts["sort_key"] = [tuple(meta.loc[l]) for l in counts.index]
     counts = counts.sort_values("sort_key", ascending=True)
 
     render_diverging_bar(counts.index.tolist(), counts["OFFER"].tolist(), counts["BID"].tolist(), "")
 
 
 with tab_charts:
-    st.subheader("Outright 만기별 Bid/Offer 비교 (왼쪽 Offer / 오른쪽 Bid)")
+    st.subheader("Outright 만기별 Bid/Offer 비교")
     st.caption("6M/9M/1Y/1.5Y/2Y/3Y/4Y/5Y/7Y/9Y/10Y가 기본 만기이며, 그 외 만기는 호가가 생기면 뒤에 임시로 추가돼요.")
     render_outright_chart(fdf)
 
     st.subheader("스프레드 거래 만기별 Bid/Offer 비교")
-    st.caption("2개 이상 만기를 조합한 거래(예: `2*3년`, `1*3년` 등) — 상위 12개")
+    st.caption("2개 이상 만기를 조합한 거래(예: `2*3년`, `1*3년` 등) — 첫 번째 만기 기준 오름차순, `*`/`/` 구분자는 같은 만기로 통합")
     render_spread_chart(fdf)
 
     c1, c2 = st.columns(2)
