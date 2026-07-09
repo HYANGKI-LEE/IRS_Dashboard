@@ -335,28 +335,41 @@ def render_spread_deal_chart(data: pd.DataFrame, order: list):
     )
 
 
-with tab_charts:
+def render_outright_and_spread(data: pd.DataFrame):
     st.subheader("Outright 만기별")
     st.caption("6M/9M/1Y/1.5Y/2Y/3Y/4Y/5Y/7Y/9Y/10Y가 기본 만기이며, 그 외 만기는 호가/거래가 생기면 뒤에 임시로 추가돼요.")
-    outright_ord = outright_order(fdf)
+    outright_ord = outright_order(data)
     oc1, oc2 = st.columns(2)
     with oc1:
         st.markdown("**호가 (Bid/Offer)**")
-        render_outright_chart(fdf, outright_ord)
+        render_outright_chart(data, outright_ord)
     with oc2:
         st.markdown("**실제 거래 (기븐/테이큰/거래)**")
-        render_outright_deal_chart(fdf, outright_ord)
+        render_outright_deal_chart(data, outright_ord)
 
     st.subheader("스프레드 거래 만기별")
     st.caption("2개 이상 만기를 조합한 거래(예: `2*3년`, `1*3년` 등) — 첫 번째 만기 기준 오름차순, `*`/`/` 구분자는 같은 만기로 통합")
-    spread_ord = spread_order(fdf)
+    spread_ord = spread_order(data)
     sc1, sc2 = st.columns(2)
     with sc1:
         st.markdown("**호가 (Bid/Offer)**")
-        render_spread_chart(fdf, spread_ord)
+        render_spread_chart(data, spread_ord)
     with sc2:
         st.markdown("**실제 거래 (기븐/테이큰/거래)**")
-        render_spread_deal_chart(fdf, spread_ord)
+        render_spread_deal_chart(data, spread_ord)
+
+
+with tab_charts:
+    st.header("CD")
+    render_outright_and_spread(fdf[fdf["rate_type"] == "CD"])
+
+    st.divider()
+
+    st.header("KOFR")
+    st.caption("원문에 코퍼/코베/kofr/KOFR가 포함된 호가·거래")
+    render_outright_and_spread(fdf[fdf["rate_type"] == "KOFR"])
+
+    st.divider()
 
     c1, c2 = st.columns(2)
 
@@ -429,7 +442,7 @@ with tab_charts:
 with tab_table:
     display_cols = [
         "source_file", "sender", "date", "time", "action_label", "is_live",
-        "instrument_type", "tenor_raw", "rate_1", "rate_2", "amount_eok",
+        "rate_type", "instrument_type", "tenor_raw", "rate_1", "rate_2", "amount_eok",
         "clearing_tags", "raw_text",
     ]
     show_df = fdf[display_cols].copy()

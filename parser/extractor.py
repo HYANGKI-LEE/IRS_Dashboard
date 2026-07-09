@@ -13,8 +13,10 @@ from parser.taxonomy import (
     AMOUNT_RE,
     CLEARING_TAG_PATTERNS,
     DEFAULT_INSTRUMENT,
+    DEFAULT_RATE_TYPE,
     INSTRUMENT_RULES,
     RATE_RE,
+    RATE_TYPE_KOFR_RE,
     TENOR_CLEARING_SUFFIX_RE,
     TENOR_IMPLICIT_BUTTERFLY_RE,
     TENOR_MULTI_LEG_RE,
@@ -75,11 +77,16 @@ def _extract_instrument_type(sub_line: str) -> str:
     return DEFAULT_INSTRUMENT
 
 
+def _extract_rate_type(sub_line: str) -> str:
+    return "KOFR" if RATE_TYPE_KOFR_RE.search(sub_line) else DEFAULT_RATE_TYPE
+
+
 def extract(sub_line: str) -> dict:
     tenor_raw, tenor_legs, tenor_unit, remaining = _extract_tenor(sub_line)
     rate_raw, rate_1, rate_2 = _extract_rate(remaining)
     return {
         "instrument_type": _extract_instrument_type(sub_line),
+        "rate_type": _extract_rate_type(sub_line),
         "tenor_raw": tenor_raw,
         "tenor_legs": tenor_legs,
         "tenor_unit": tenor_unit,

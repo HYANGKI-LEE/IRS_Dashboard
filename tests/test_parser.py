@@ -103,6 +103,17 @@ def test_extract_nd_attached_without_space():
     assert "ND" in fields["clearing_tags"]
 
 
+def test_extract_rate_type_defaults_to_cd():
+    assert extract("2*3년 09.25 비드")["rate_type"] == "CD"
+
+
+def test_extract_rate_type_kofr_keywords():
+    assert extract("9m kofr 베이시스 -18.5 비드")["rate_type"] == "KOFR"
+    assert extract("9개월 KOFR Basis -17오퍼 청산")["rate_type"] == "KOFR"
+    assert extract("1.5년 코베 -21 거래 비드온")["rate_type"] == "KOFR"
+    assert extract("2*3년 09.25 코퍼 비드")["rate_type"] == "KOFR"
+
+
 def test_extract_slash_tenor_separator():
     # 한국자금중개 파일은 만기 구분자로 '/'를 쓴다 (5/8년 등) - 가격 슬래시와 헷갈리면 안 됨
     fields = extract("5/8년 06 비드 청산")

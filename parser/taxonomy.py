@@ -56,3 +56,7 @@ INSTRUMENT_RULES = [
     ("KOFR베이시스", re.compile(r"kofr|베이시스", re.IGNORECASE)),
 ]
 DEFAULT_INSTRUMENT = "IRS"
+
+# Tier 2: 금리 종류. 코퍼/KOFR/kofr/코베가 들어가면 KOFR, 그 외(기본)는 CD.
+RATE_TYPE_KOFR_RE = re.compile(r"코퍼|코베|kofr", re.IGNORECASE)
+DEFAULT_RATE_TYPE = "CD"

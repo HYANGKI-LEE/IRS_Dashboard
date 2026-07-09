@@ -18,6 +18,7 @@ COLUMNS = [
     "side_action",
     "is_live",
     "instrument_type",
+    "rate_type",
     "tenor_raw",
     "tenor_legs",
     "tenor_unit",
