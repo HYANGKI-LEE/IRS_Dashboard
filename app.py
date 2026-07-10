@@ -9,7 +9,7 @@ from parser.build_dataset import build_dataset
 
 DATA_DIR = Path(__file__).parent / "data"
 
-st.set_page_config(page_title="IRS 브로커 채팅 대시보드", layout="wide")
+st.set_page_config(page_title="IRS 호가 대시보드", layout="wide")
 
 DEAL_ACTIONS = {"TRADE", "GIVEN", "TAKEN"}
 ACTION_LABELS = {
@@ -97,7 +97,7 @@ if search_text:
 
 fdf = df[mask]
 
-st.title("IRS 브로커 채팅 대시보드")
+st.title("IRS 호가 대시보드")
 st.caption(f"data/ 폴더의 .txt {len(list(DATA_DIR.glob('*.txt')))}개 파일 기준, 전체 {len(df)}건 중 {len(fdf)}건 표시 중")
 
 # ---------------- KPI ----------------
