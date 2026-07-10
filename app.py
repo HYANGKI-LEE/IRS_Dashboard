@@ -415,7 +415,10 @@ with tab_price:
     else:
         picked_tenor = st.selectbox("만기 선택", tenor_options)
 
-        single = rt_df[rt_df["tenor_legs"].apply(_is_single_leg)].copy()
+        single = rt_df[
+            (rt_df["side_action"] != "UNCLASSIFIED")  # 시황요약 블록처럼 방향 정보 없는 잡음 제외
+            & rt_df["tenor_legs"].apply(_is_single_leg)
+        ].copy()
         single["outright_label"] = single.apply(
             lambda r: _outright_label(r["tenor_legs"], r["tenor_unit"]), axis=1
         )
