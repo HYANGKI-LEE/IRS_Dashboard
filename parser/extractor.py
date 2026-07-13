@@ -17,7 +17,6 @@ from parser.taxonomy import (
     INSTRUMENT_RULES,
     RATE_RE,
     RATE_TYPE_KOFR_RE,
-    TENOR_CLEARING_SUFFIX_RE,
     TENOR_IMPLICIT_BUTTERFLY_RE,
     TENOR_MULTI_LEG_RE,
     TENOR_SINGLE_RE,
@@ -64,10 +63,7 @@ def _extract_amount(sub_line: str):
 
 
 def _extract_clearing_tags(sub_line: str) -> list[str]:
-    tags = [label for label, pattern in CLEARING_TAG_PATTERNS if pattern.search(sub_line)]
-    if TENOR_CLEARING_SUFFIX_RE.search(sub_line):
-        tags.append("클")
-    return tags
+    return [label for label, pattern in CLEARING_TAG_PATTERNS if pattern.search(sub_line)]
 
 
 def _extract_instrument_type(sub_line: str) -> str:

@@ -90,10 +90,12 @@ def test_extract_amount_and_clearing_tags():
     assert fields["rate_2"] == 41.5
 
 
-def test_extract_clearing_suffix_attached_to_tenor():
+def test_extract_crs_suffix_attached_to_tenor():
+    # "클"은 청산 태그가 아니라 CRS(통화스왑, IRS와 다른 상품) 표시
     fields = extract("2년클 26.5/25 로컬/포린")
     assert fields["tenor_raw"] == "2년"
-    assert "클" in fields["clearing_tags"]
+    assert fields["instrument_type"] == "CRS"
+    assert "클" not in fields["clearing_tags"]
     assert "로컬" in fields["clearing_tags"]
     assert "포린" in fields["clearing_tags"]
 

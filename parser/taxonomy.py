@@ -29,8 +29,9 @@ TENOR_SINGLE_RE = re.compile(rf"({_NUM})\s*({_UNIT})")
 TENOR_IMPLICIT_BUTTERFLY_RE = re.compile(
     rf"({_NUM})\s*([*/])\s*({_NUM})\s*([*/])\s*({_NUM})\s*(?=나비|버터플라이)"
 )
-# "2년클"처럼 만기 단위 뒤에 공백 없이 붙는 클리어링 표시
-TENOR_CLEARING_SUFFIX_RE = re.compile(r"(년|개월)클")
+# "1.5년클"처럼 만기 단위 뒤에 공백 없이 붙는 "클"은 청산 표시가 아니라
+# CRS(통화스왑, IRS와는 다른 상품) 거래를 뜻한다.
+CRS_SUFFIX_RE = re.compile(r"(년|개월)클")
 
 # Tier 2: 가격(rate). "@"로 시작하는 체결가 표기를 선택적으로 소비, "/"로 나뉜 양방향 가격 지원.
 RATE_RE = re.compile(rf"@?\s*(-?{_NUM})(?:\s*/\s*(-?{_NUM}))?")
@@ -50,7 +51,9 @@ CLEARING_TAG_PATTERNS = [
 ]
 
 # Tier 2: 상품 구분. 나비/버터플라이는 동일 개념 -> 동일 값으로 정규화.
+# CRS는 "1.5년클"처럼 만기 뒤에 붙는 "클"로 식별 (IRS와는 다른 상품이므로 최우선 체크).
 INSTRUMENT_RULES = [
+    ("CRS", CRS_SUFFIX_RE),
     ("버터플라이", re.compile(r"나비|버터플라이")),
     ("코베", re.compile(r"코베")),
     ("KOFR베이시스", re.compile(r"kofr|베이시스", re.IGNORECASE)),
