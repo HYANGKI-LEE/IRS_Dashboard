@@ -155,17 +155,22 @@ def test_build_dataset_from_real_files_no_crash():
 
 
 def test_multiline_refer_block_gfi():
-    # 최정욱 (12:08:23) 메시지는 3줄(9*10년/10*12년/10*15년 비드 리퍼)짜리 멀티라인 메시지
+    # 최정욱 (2026-07-08 12:08:23) 메시지는 3줄(9*10년/10*12년/10*15년 비드 리퍼)짜리 멀티라인 메시지.
+    # date까지 못 박아야 한다 - 데이터가 늘면서 다른 날짜에 같은 시각(time)이 또 나올 수 있음.
     df = build_dataset(str(DATA_DIR))
-    rows = df[(df["sender"] == "최정욱") & (df["time"] == "12:08:23")]
+    rows = df[
+        (df["sender"] == "최정욱") & (df["time"] == "12:08:23") & (df["date"] == "2026-07-08")
+    ]
     assert len(rows) == 3
     assert (rows["side_action"] == "REFER").all()
 
 
 def test_multiline_kofr_basis_block_kidb():
-    # 김희진 (10:36:54) 메시지는 4개의 서로 다른 만기(9m/1y/1.5y/2y) 줄로 된 멀티라인 메시지
+    # 김희진 (2026-07-08 10:36:54) 메시지는 4개의 서로 다른 만기(9m/1y/1.5y/2y) 줄로 된 멀티라인 메시지
     df = build_dataset(str(DATA_DIR))
-    rows = df[(df["sender"] == "김희진") & (df["time"] == "10:36:54")]
+    rows = df[
+        (df["sender"] == "김희진") & (df["time"] == "10:36:54") & (df["date"] == "2026-07-08")
+    ]
     assert len(rows) == 4
     assert set(rows["tenor_raw"]) == {"9m", "1y", "1.5y", "2y"}
 
