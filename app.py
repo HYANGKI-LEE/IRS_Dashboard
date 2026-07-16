@@ -416,7 +416,9 @@ with tab_price:
         picked_tenor = st.selectbox("만기 선택", tenor_options)
 
         single = rt_df[
-            (rt_df["side_action"] != "UNCLASSIFIED")  # 시황요약 블록처럼 방향 정보 없는 잡음 제외
+            # 시황요약 블록처럼 방향 정보 없는 잡음(미분류), 호가를 거둬들인다는 뜻인
+            # 리퍼(취소)는 실제 가격이 아니므로 가격 추이에서 제외
+            (~rt_df["side_action"].isin(["UNCLASSIFIED", "REFER"]))
             & rt_df["tenor_legs"].apply(_is_single_leg)
         ].copy()
         single["outright_label"] = single.apply(
