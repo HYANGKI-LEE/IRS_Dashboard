@@ -1,3 +1,7 @@
+import urllib.request
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import pandas as pd
@@ -6,6 +10,37 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from parser.build_dataset import build_dataset
+
+NEWS_RSS_URL = "https://www.yna.co.kr/rss/economy.xml"
+NEWS_KEYWORDS = ("금리", "국고채", "국채", "스왑", "채권", "기준금리", "IRS")
+
+
+@st.cache_data(ttl=1800)  # 30분 캐시 - 매번 새로고침할 때마다 연합뉴스에 요청 안 가게
+def fetch_rate_market_news(max_items: int = 5) -> list[dict]:
+    """전용 IRS 뉴스 소스가 따로 없어서, 연합뉴스 경제 RSS에서 금리/채권/스왑 관련
+    헤드라인만 걸러서 보여준다. 원문 본문은 가져오지 않고 제목+링크+시각만 사용."""
+    try:
+        req = urllib.request.Request(NEWS_RSS_URL, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            root = ET.fromstring(resp.read())
+    except Exception:
+        return []
+
+    items = []
+    for item in root.findall(".//item"):
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        pub_raw = item.findtext("pubDate") or ""
+        if not title or not any(k in title for k in NEWS_KEYWORDS):
+            continue
+        try:
+            pub_dt = parsedate_to_datetime(pub_raw)
+        except Exception:
+            pub_dt = None
+        items.append({"title": title, "link": link, "pub_dt": pub_dt})
+
+    items.sort(key=lambda x: x["pub_dt"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return items[:max_items]
 
 DATA_DIR = Path(__file__).parent / "data"
 
@@ -99,6 +134,18 @@ fdf = df[mask]
 
 st.title("IRS 호가 대시보드")
 st.caption(f"data/ 폴더의 .txt {len(list(DATA_DIR.glob('*.txt')))}개 파일 기준, 전체 {len(df)}건 중 {len(fdf)}건 표시 중")
+
+# ---------------- 오늘의 금리·채권 시장 뉴스 ----------------
+with st.container(border=True):
+    st.subheader("📰 오늘의 금리·채권 시장 뉴스")
+    st.caption("연합뉴스 경제 RSS에서 금리/국고채/스왑 관련 헤드라인만 자동으로 걸러서 보여드려요 (전용 IRS 뉴스는 없어 국고채·기준금리 뉴스로 대신함, 30분마다 갱신)")
+    news_items = fetch_rate_market_news()
+    if news_items:
+        for n in news_items:
+            when = n["pub_dt"].strftime("%m/%d %H:%M") if n["pub_dt"] else ""
+            st.markdown(f"- [{n['title']}]({n['link']}) `{when}`")
+    else:
+        st.info("지금은 뉴스를 불러올 수 없어요. 잠시 후 새로고침해보세요.")
 
 # ---------------- KPI ----------------
 total = len(fdf)
